@@ -20,16 +20,14 @@ export default async function handler(req) {
 
   const url = new URL(req.url);
 
-  // ── 상태 폴링: GET /api/segment?jobId=xxx ──
+  // 상태 폴링: GET /api/segment?jobId=xxx
   if (req.method === 'GET') {
     const jobId = url.searchParams.get('jobId');
     if (!jobId) {
       return new Response(JSON.stringify({ error: 'jobId 없음' }), { status: 400, headers: CORS });
     }
-
     const RUNPOD_API_KEY = process.env.RUNPOD_API_KEY;
     const RUNPOD_ENDPOINT_ID = process.env.RUNPOD_ENDPOINT_ID;
-
     const statusRes = await fetch(
       `https://api.runpod.io/v2/${RUNPOD_ENDPOINT_ID}/status/${jobId}`,
       { headers: { 'Authorization': `Bearer ${RUNPOD_API_KEY}` } }
@@ -38,7 +36,6 @@ export default async function handler(req) {
     return new Response(JSON.stringify(data), { status: 200, headers: CORS });
   }
 
-  // ── 작업 제출: POST /api/segment ──
   if (req.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'POST만 허용' }), { status: 405, headers: CORS });
   }
@@ -63,7 +60,6 @@ export default async function handler(req) {
       return new Response(JSON.stringify({ error: 'GLB 파일 없음' }), { status: 400, headers: CORS });
     }
 
-    // 비동기 run 제출 (타임아웃 없음)
     const runRes = await fetch(
       `https://api.runpod.io/v2/${RUNPOD_ENDPOINT_ID}/run`,
       {
@@ -79,6 +75,15 @@ export default async function handler(req) {
     );
 
     const runData = await runRes.json();
+
+    // jobId 없으면 RunPod 전체 응답 반환 (디버그)
+    if (!runData.id) {
+      return new Response(JSON.stringify({ error: 'jobId 없음', raw: runData, httpStatus: runRes.status }), {
+        status: 200,
+        headers: CORS,
+      });
+    }
+
     return new Response(JSON.stringify({ jobId: runData.id, status: runData.status }), {
       status: 200,
       headers: CORS,
