@@ -3,7 +3,6 @@ export const config = {
 };
 
 export default async function handler(req) {
-  // CORS 처리
   if (req.method === 'OPTIONS') {
     return new Response(null, {
       headers: {
@@ -48,7 +47,25 @@ export default async function handler(req) {
       }
     );
 
-    const result = await runpodRes.json();
+    // 응답 텍스트로 먼저 받기
+    const rawText = await runpodRes.text();
+    
+    let result;
+    try {
+      result = JSON.parse(rawText);
+    } catch (e) {
+      return new Response(JSON.stringify({ 
+        error: 'RunPod 응답 파싱 실패', 
+        raw: rawText.substring(0, 200),
+        status: runpodRes.status
+      }), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+        },
+      });
+    }
 
     return new Response(JSON.stringify(result), {
       status: 200,
@@ -59,6 +76,12 @@ export default async function handler(req) {
     });
 
   } catch (err) {
-    return new Response(JSON.stringify({ error: err.message }), { status: 500 });
+    return new Response(JSON.stringify({ error: err.message }), { 
+      status: 500,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+      },
+    });
   }
 }
