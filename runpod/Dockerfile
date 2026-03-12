@@ -10,9 +10,9 @@ RUN apt-get update && apt-get install -y \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-# Python 패키지
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Python 패키지 단계별 설치
+RUN pip install --no-cache-dir runpod huggingface_hub safetensors numpy scipy scikit-learn timm einops trimesh
+RUN pip install --no-cache-dir open3d || echo "open3d skip"
 
 # P3-SAM 소스 클론
 RUN git clone https://github.com/Tencent-Hunyuan/Hunyuan3D-Part.git /app/Hunyuan3D-Part

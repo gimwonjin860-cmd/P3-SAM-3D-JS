@@ -781,7 +781,7 @@
   }
 
   // Generate
-  btnGenerate.addEventListener('click', () => {
+  btnGenerate.addEventListener('click', async () => {
     if (!currentFile) return;
     btnGenerate.disabled = true;
     resultEmpty.classList.add('hidden');
@@ -790,49 +790,81 @@
     downloadRow.style.display = 'none';
 
     const steps = ['step1','step2','step3','step4'];
-    const delays = [0, 900, 1900, 2900];
+    steps.forEach(id => document.getElementById(id).className = 'proc-step');
 
-    steps.forEach((id, i) => {
-      document.getElementById(id).className = 'proc-step';
-    });
-    steps.forEach((id, i) => {
-      setTimeout(() => {
-        if (i > 0) document.getElementById(steps[i-1]).className = 'proc-step done';
-        document.getElementById(id).className = 'proc-step active';
-      }, delays[i]);
-    });
+    // 스텝 애니메이션
+    let stepIdx = 0;
+    const stepInterval = setInterval(() => {
+      if (stepIdx > 0) document.getElementById(steps[stepIdx-1]).className = 'proc-step done';
+      if (stepIdx < steps.length) {
+        document.getElementById(steps[stepIdx]).className = 'proc-step active';
+        stepIdx++;
+      }
+    }, 1000);
 
-    setTimeout(() => {
-      document.getElementById(steps[steps.length-1]).className = 'proc-step done';
-      showResult();
-    }, 3800);
+    try {
+      // GLB → base64 변환
+      const glbBase64 = await fileToBase64(currentFile);
+
+      // API 호출
+      const res = await fetch('/api/segment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          glb: glbBase64,
+          filename: currentFile.name
+        })
+      });
+
+      clearInterval(stepInterval);
+      steps.forEach(id => document.getElementById(id).className = 'proc-step done');
+
+      const data = await res.json();
+
+      if (data.error) {
+        alert('오류: ' + data.error);
+        resetResult();
+        btnGenerate.disabled = false;
+        return;
+      }
+
+      // output.parts 가 있으면 실제 결과, 없으면 에러
+      const parts = data.output?.parts || [];
+      showResult(parts);
+
+    } catch (err) {
+      clearInterval(stepInterval);
+      alert('요청 실패: ' + err.message);
+      resetResult();
+      btnGenerate.disabled = false;
+    }
   });
 
-  function showResult() {
+  function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result.split(',')[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function showResult(parts) {
     resultProcessing.classList.remove('visible');
     resultDone.classList.add('visible');
     downloadRow.style.display = 'flex';
 
-    const parts = [
-      { name: 'body', color: '#7b61ff' },
-      { name: 'basin', color: '#c8f542' },
-      { name: 'faucet', color: '#ff6b6b' },
-      { name: 'drain', color: '#ffd166' },
-      { name: 'pipe', color: '#06d6a0' },
-      { name: 'pedestal', color: '#a8dadc' },
-    ];
-    const count = Math.floor(Math.random() * 3) + 4;
-    const selected = parts.slice(0, count);
+    const colors = ['#7b61ff','#c8f542','#ff6b6b','#ffd166','#06d6a0','#a8dadc','#ff9f1c','#e9c46a'];
 
     segTags.innerHTML = '';
-    selected.forEach(p => {
+    parts.forEach((p, i) => {
       const tag = document.createElement('div');
       tag.className = 'seg-tag';
-      tag.innerHTML = `<div class="seg-tag-dot" style="background:${p.color}"></div>${p.name}`;
+      tag.innerHTML = `<div class="seg-tag-dot" style="background:${p.color || colors[i % colors.length]}"></div>${p.name}`;
       segTags.appendChild(tag);
     });
 
-    segCount.textContent = `${count} parts`;
+    segCount.textContent = `${parts.length} parts`;
     btnGenerate.disabled = false;
   }
 
