@@ -800,37 +800,73 @@
         document.getElementById(steps[stepIdx]).className = 'proc-step active';
         stepIdx++;
       }
-    }, 1000);
+    }, 4000);
 
     try {
       // GLB → base64 변환
       const glbBase64 = await fileToBase64(currentFile);
 
-      // API 호출
+      // 1단계: 작업 제출
       const res = await fetch('/api/segment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          glb: glbBase64,
-          filename: currentFile.name
-        })
+        body: JSON.stringify({ glb: glbBase64, filename: currentFile.name })
       });
 
-      clearInterval(stepInterval);
-      steps.forEach(id => document.getElementById(id).className = 'proc-step done');
+      const submitData = await res.json();
 
-      const data = await res.json();
-
-      if (data.error) {
-        alert('오류: ' + data.error);
+      if (submitData.error) {
+        clearInterval(stepInterval);
+        alert('오류: ' + submitData.error);
         resetResult();
         btnGenerate.disabled = false;
         return;
       }
 
-      // output.parts 가 있으면 실제 결과, 없으면 에러
-      const parts = data.output?.parts || [];
-      showResult(parts);
+      const jobId = submitData.jobId;
+      if (!jobId) {
+        clearInterval(stepInterval);
+        alert('jobId 없음: ' + JSON.stringify(submitData));
+        resetResult();
+        btnGenerate.disabled = false;
+        return;
+      }
+
+      // 2단계: 폴링 (3초마다 상태 확인, 최대 5분)
+      const maxAttempts = 100;
+      let attempts = 0;
+
+      const poll = async () => {
+        attempts++;
+        if (attempts > maxAttempts) {
+          clearInterval(stepInterval);
+          alert('타임아웃: 처리 시간이 너무 오래 걸립니다.');
+          resetResult();
+          btnGenerate.disabled = false;
+          return;
+        }
+
+        const pollRes = await fetch(`/api/segment?jobId=${jobId}`);
+        const pollData = await pollRes.json();
+        const status = pollData.status;
+
+        if (status === 'COMPLETED') {
+          clearInterval(stepInterval);
+          steps.forEach(id => document.getElementById(id).className = 'proc-step done');
+          const parts = pollData.output?.parts || [];
+          showResult(parts);
+        } else if (status === 'FAILED') {
+          clearInterval(stepInterval);
+          alert('처리 실패: ' + JSON.stringify(pollData.error || pollData));
+          resetResult();
+          btnGenerate.disabled = false;
+        } else {
+          // IN_QUEUE, IN_PROGRESS 등 → 3초 후 재시도
+          setTimeout(poll, 3000);
+        }
+      };
+
+      setTimeout(poll, 3000);
 
     } catch (err) {
       clearInterval(stepInterval);
