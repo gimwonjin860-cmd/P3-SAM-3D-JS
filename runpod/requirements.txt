@@ -1,0 +1,11 @@
+runpod==1.7.3
+torch>=2.1.0
+torchvision
+trimesh
+numpy
+huggingface_hub
+safetensors
+open3d
+scipy
+scikit-learn
+timm>=0.9.0
