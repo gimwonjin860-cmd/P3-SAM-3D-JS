@@ -1,0 +1,848 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>스키프. — 3D Part Segmentation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&family=DM+Sans:wght@300;400;500&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0e0e10;
+    --surface: #16161a;
+    --surface2: #1e1e24;
+    --border: rgba(255,255,255,0.07);
+    --border-hover: rgba(255,255,255,0.15);
+    --accent: #c8f542;
+    --accent2: #7b61ff;
+    --text: #f0f0f0;
+    --muted: #666;
+    --muted2: #444;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Ambient background blobs */
+  body::before {
+    content: '';
+    position: fixed;
+    top: -200px; left: -200px;
+    width: 600px; height: 600px;
+    background: radial-gradient(circle, rgba(123,97,255,0.12) 0%, transparent 70%);
+    pointer-events: none;
+    z-index: 0;
+  }
+  body::after {
+    content: '';
+    position: fixed;
+    bottom: -150px; right: -150px;
+    width: 500px; height: 500px;
+    background: radial-gradient(circle, rgba(200,245,66,0.07) 0%, transparent 70%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* NAV */
+  nav {
+    position: fixed; top: 0; left: 0; right: 0;
+    z-index: 100;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 2rem;
+    height: 56px;
+    background: rgba(14,14,16,0.85);
+    backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--border);
+  }
+  .nav-logo {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.4rem;
+    font-weight: 900;
+    letter-spacing: -0.02em;
+    color: var(--text);
+  }
+  .nav-logo span { color: var(--accent); }
+  .nav-tabs {
+    display: flex; gap: 2px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 3px;
+  }
+  .nav-tab {
+    padding: 5px 16px;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.2s;
+    border: none; background: none;
+  }
+  .nav-tab.active {
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border-hover);
+  }
+  .nav-right {
+    display: flex; align-items: center; gap: 1rem;
+  }
+  .nav-badge {
+    font-size: 0.72rem;
+    font-family: 'DM Mono', monospace;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 3px 10px;
+    color: var(--muted);
+  }
+  .nav-badge b { color: var(--accent); }
+  .nav-avatar {
+    width: 32px; height: 32px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent2), var(--accent));
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.7rem; font-weight: 700; color: #000;
+    cursor: pointer;
+  }
+
+  /* MAIN */
+  main {
+    position: relative; z-index: 1;
+    padding-top: 56px;
+    min-height: 100vh;
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center;
+    gap: 2rem;
+    padding-bottom: 3rem;
+  }
+
+  /* HERO TEXT */
+  .hero {
+    text-align: center;
+    margin-top: 2rem;
+  }
+  .hero-title {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(4rem, 10vw, 8rem);
+    font-weight: 900;
+    letter-spacing: -0.04em;
+    line-height: 0.9;
+    color: var(--text);
+    position: relative;
+    display: inline-block;
+  }
+  .hero-title .dot {
+    color: var(--accent);
+  }
+  .hero-sub {
+    margin-top: 1rem;
+    font-size: 0.82rem;
+    color: var(--muted);
+    letter-spacing: 0.05em;
+    font-weight: 400;
+  }
+  .hero-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    margin-top: 0.8rem;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 4px 12px 4px 8px;
+    font-size: 0.7rem;
+    font-family: 'DM Mono', monospace;
+    color: var(--muted);
+  }
+  .hero-pill-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--accent);
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.8); }
+  }
+
+  /* WORKSPACE */
+  .workspace {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    width: 100%;
+    max-width: 960px;
+    padding: 0 1.5rem;
+  }
+
+  /* PANEL BASE */
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    overflow: hidden;
+    transition: border-color 0.25s;
+    position: relative;
+  }
+  .panel:hover { border-color: var(--border-hover); }
+
+  .panel-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 18px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .panel-title {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--muted);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .panel-title-icon {
+    width: 22px; height: 22px; border-radius: 6px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.7rem;
+  }
+  .panel-badge {
+    font-size: 0.65rem;
+    font-family: 'DM Mono', monospace;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 2px 7px;
+    color: var(--muted);
+  }
+
+  /* INPUT PANEL */
+  .input-panel .panel-body {
+    padding: 16px;
+    min-height: 360px;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+
+  /* Drop Zone */
+  .drop-zone {
+    flex: 1;
+    border: 2px dashed var(--muted2);
+    border-radius: 14px;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 10px;
+    cursor: pointer;
+    transition: all 0.25s;
+    position: relative;
+    min-height: 260px;
+    background: var(--surface2);
+    overflow: hidden;
+  }
+  .drop-zone:hover, .drop-zone.dragover {
+    border-color: var(--accent);
+    background: rgba(200,245,66,0.04);
+  }
+  .drop-zone.has-file {
+    border-style: solid;
+    border-color: var(--border-hover);
+  }
+  .drop-zone input[type="file"] {
+    position: absolute; inset: 0;
+    opacity: 0; cursor: pointer; width: 100%; height: 100%;
+  }
+  .drop-icon {
+    width: 52px; height: 52px; border-radius: 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.4rem;
+    transition: transform 0.2s;
+  }
+  .drop-zone:hover .drop-icon { transform: scale(1.05); }
+  .drop-label {
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: var(--text);
+  }
+  .drop-sublabel {
+    font-size: 0.72rem;
+    color: var(--muted);
+    font-family: 'DM Mono', monospace;
+  }
+  .drop-preview {
+    width: 100%; height: 100%;
+    object-fit: contain;
+    position: absolute; inset: 0;
+    padding: 16px;
+    display: none;
+  }
+  .drop-preview.visible { display: block; }
+  .drop-preview-mask {
+    position: absolute; inset: 0;
+    display: none; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 6px;
+    background: rgba(14,14,16,0.7);
+    backdrop-filter: blur(4px);
+    font-size: 0.78rem;
+    color: var(--text);
+  }
+  .drop-zone.has-file:hover .drop-preview-mask { display: flex; }
+  .drop-preview-mask span { font-size: 1.2rem; }
+
+  /* File info */
+  .file-info {
+    display: none;
+    align-items: center; justify-content: space-between;
+    padding: 8px 12px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-size: 0.75rem;
+  }
+  .file-info.visible { display: flex; }
+  .file-info-name {
+    font-family: 'DM Mono', monospace;
+    color: var(--text);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    max-width: 180px;
+  }
+  .file-info-size { color: var(--muted); }
+  .file-remove {
+    background: none; border: none; cursor: pointer;
+    color: var(--muted); font-size: 0.8rem; padding: 2px 6px;
+    border-radius: 4px; transition: all 0.15s;
+  }
+  .file-remove:hover { background: rgba(255,80,80,0.15); color: #ff5050; }
+
+  /* OUTPUT PANEL */
+  .output-panel .panel-body {
+    padding: 16px;
+    min-height: 360px;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+
+  .result-area {
+    flex: 1;
+    min-height: 260px;
+    border-radius: 14px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 10px;
+    position: relative;
+    overflow: hidden;
+  }
+  .result-empty {
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 8px;
+    opacity: 0.4;
+  }
+  .result-empty-icon {
+    width: 48px; height: 48px;
+    border-radius: 12px;
+    border: 1px dashed var(--muted2);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.2rem;
+  }
+  .result-empty-text {
+    font-size: 0.75rem;
+    color: var(--muted);
+    font-family: 'DM Mono', monospace;
+  }
+
+  /* Processing animation */
+  .result-processing {
+    display: none;
+    flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 16px;
+  }
+  .result-processing.visible { display: flex; }
+  .result-empty.hidden { display: none; }
+  .spinner-wrap {
+    position: relative;
+    width: 56px; height: 56px;
+  }
+  .spinner {
+    width: 56px; height: 56px;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    animation: spin 1s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner-inner {
+    position: absolute;
+    top: 8px; left: 8px;
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    border-bottom-color: var(--accent2);
+    animation: spin 1.5s linear infinite reverse;
+  }
+  .proc-label {
+    font-size: 0.78rem;
+    color: var(--muted);
+    font-family: 'DM Mono', monospace;
+  }
+  .proc-steps {
+    display: flex; flex-direction: column; gap: 4px;
+    width: 180px;
+  }
+  .proc-step {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 0.7rem;
+    color: var(--muted);
+    font-family: 'DM Mono', monospace;
+  }
+  .proc-step-dot {
+    width: 5px; height: 5px; border-radius: 50%;
+    background: var(--muted2);
+    flex-shrink: 0;
+    transition: background 0.3s;
+  }
+  .proc-step.done .proc-step-dot { background: var(--accent); }
+  .proc-step.done { color: var(--text); }
+  .proc-step.active .proc-step-dot {
+    background: var(--accent2);
+    animation: pulse 1s infinite;
+  }
+
+  /* Result done */
+  .result-done {
+    display: none;
+    width: 100%; height: 100%;
+    flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 12px;
+    padding: 16px;
+  }
+  .result-done.visible { display: flex; }
+
+  /* 3D viewer mock */
+  .viewer-3d {
+    width: 100%;
+    flex: 1;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #111116, #1a1a22);
+    border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    position: relative;
+    overflow: hidden;
+    min-height: 170px;
+  }
+  .viewer-3d::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: 
+      radial-gradient(ellipse at 30% 40%, rgba(123,97,255,0.15) 0%, transparent 60%),
+      radial-gradient(ellipse at 70% 60%, rgba(200,245,66,0.08) 0%, transparent 50%);
+  }
+  .viewer-mesh {
+    font-size: 3.5rem;
+    position: relative; z-index: 1;
+    animation: float 3s ease-in-out infinite;
+    filter: drop-shadow(0 0 20px rgba(123,97,255,0.4));
+  }
+  @keyframes float {
+    0%, 100% { transform: translateY(0) rotate(-5deg); }
+    50% { transform: translateY(-10px) rotate(5deg); }
+  }
+  .viewer-label {
+    position: absolute; bottom: 10px; left: 12px;
+    font-size: 0.65rem;
+    font-family: 'DM Mono', monospace;
+    color: var(--muted);
+    background: rgba(14,14,16,0.7);
+    border-radius: 4px;
+    padding: 2px 7px;
+  }
+
+  /* Segment tags */
+  .segment-tags {
+    display: flex; flex-wrap: wrap; gap: 5px;
+    width: 100%;
+  }
+  .seg-tag {
+    display: flex; align-items: center; gap: 5px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 0.68rem;
+    font-family: 'DM Mono', monospace;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .seg-tag:hover { border-color: var(--border-hover); background: var(--surface2); }
+  .seg-tag-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+  }
+
+  /* Download row */
+  .download-row {
+    display: flex; gap: 6px; width: 100%;
+  }
+  .dl-btn {
+    flex: 1;
+    padding: 9px 10px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--text);
+    font-size: 0.72rem;
+    font-family: 'DM Mono', monospace;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center; gap: 5px;
+    transition: all 0.2s;
+  }
+  .dl-btn:hover { border-color: var(--border-hover); background: var(--surface); }
+  .dl-btn.primary {
+    flex: 2;
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #000;
+    font-weight: 700;
+  }
+  .dl-btn.primary:hover { background: #d4ff55; }
+
+  /* GENERATE BUTTON */
+  .generate-wrap {
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+  }
+  .btn-generate {
+    display: flex; align-items: center; gap: 10px;
+    padding: 14px 48px;
+    border-radius: 999px;
+    background: var(--text);
+    color: #000;
+    font-size: 0.9rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    border: none; cursor: pointer;
+    transition: all 0.2s;
+    font-family: 'DM Sans', sans-serif;
+    position: relative;
+    overflow: hidden;
+  }
+  .btn-generate::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  .btn-generate:hover::before { opacity: 1; }
+  .btn-generate:hover { color: #000; transform: scale(1.02); }
+  .btn-generate span { position: relative; z-index: 1; }
+  .btn-generate:disabled {
+    opacity: 0.4; cursor: not-allowed; transform: none;
+  }
+  .btn-generate:disabled::before { opacity: 0; }
+
+  .gen-hint {
+    font-size: 0.7rem;
+    color: var(--muted);
+    font-family: 'DM Mono', monospace;
+  }
+  .gen-hint b { color: var(--accent); }
+
+  /* Fade in */
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .hero { animation: fadeUp 0.6s ease both; }
+  .workspace { animation: fadeUp 0.6s 0.15s ease both; }
+  .generate-wrap { animation: fadeUp 0.6s 0.25s ease both; }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="nav-logo">스키프<span>.</span></div>
+  <div class="nav-tabs">
+    <button class="nav-tab">ChatAvatar</button>
+    <button class="nav-tab active">Rodin</button>
+    <button class="nav-tab">Image</button>
+    <button class="nav-tab">OmniCraft</button>
+  </div>
+  <div class="nav-right">
+    <div class="nav-badge">P³-SAM <b>v1.0</b></div>
+    <div class="nav-avatar">SK</div>
+  </div>
+</nav>
+
+<!-- MAIN -->
+<main>
+  <div class="hero">
+    <div class="hero-title">스키프<span class="dot">.</span></div>
+    <div class="hero-sub">GLB를 업로드하면 파트별로 자동 그룹화합니다</div>
+    <div class="hero-pill">
+      <div class="hero-pill-dot"></div>
+      P3-SAM · Native 3D Part Segmentation
+    </div>
+  </div>
+
+  <div class="workspace">
+
+    <!-- INPUT PANEL -->
+    <div class="panel input-panel">
+      <div class="panel-header">
+        <div class="panel-title">
+          <div class="panel-title-icon">📂</div>
+          GLB 업로드
+        </div>
+        <div class="panel-badge">.glb / .obj</div>
+      </div>
+      <div class="panel-body">
+        <div class="drop-zone" id="dropZone">
+          <input type="file" id="fileInput" accept=".glb,.obj,.ply" />
+          <img class="drop-preview" id="dropPreview" alt="preview" />
+          <div class="drop-preview-mask">
+            <span>🔄</span>
+            파일 교체
+          </div>
+          <div class="drop-icon" id="dropIcon">📦</div>
+          <div class="drop-label" id="dropLabel">파일을 드래그하거나 클릭</div>
+          <div class="drop-sublabel" id="dropSub">.glb · .obj · .ply 지원</div>
+        </div>
+        <div class="file-info" id="fileInfo">
+          <div class="file-info-name" id="fileName">—</div>
+          <div class="file-info-size" id="fileSize">—</div>
+          <button class="file-remove" id="fileRemove">✕</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- OUTPUT PANEL -->
+    <div class="panel output-panel">
+      <div class="panel-header">
+        <div class="panel-title">
+          <div class="panel-title-icon">🎯</div>
+          세그멘테이션 결과
+        </div>
+        <div class="panel-badge" id="segCount">—</div>
+      </div>
+      <div class="panel-body">
+        <div class="result-area" id="resultArea">
+
+          <!-- Empty state -->
+          <div class="result-empty" id="resultEmpty">
+            <div class="result-empty-icon">⬡</div>
+            <div class="result-empty-text">결과 없음</div>
+          </div>
+
+          <!-- Processing -->
+          <div class="result-processing" id="resultProcessing">
+            <div class="spinner-wrap">
+              <div class="spinner"></div>
+              <div class="spinner-inner"></div>
+            </div>
+            <div class="proc-steps" id="procSteps">
+              <div class="proc-step" id="step1"><div class="proc-step-dot"></div>포인트 클라우드 변환 중</div>
+              <div class="proc-step" id="step2"><div class="proc-step-dot"></div>특징 추출 중</div>
+              <div class="proc-step" id="step3"><div class="proc-step-dot"></div>마스크 생성 중</div>
+              <div class="proc-step" id="step4"><div class="proc-step-dot"></div>파트 병합 중</div>
+            </div>
+          </div>
+
+          <!-- Done -->
+          <div class="result-done" id="resultDone">
+            <div class="viewer-3d">
+              <div class="viewer-mesh">🔷</div>
+              <div class="viewer-label">mesh · 12,840 faces</div>
+            </div>
+            <div class="segment-tags" id="segTags"></div>
+          </div>
+
+        </div>
+
+        <!-- Download buttons (hidden until done) -->
+        <div class="download-row" id="downloadRow" style="display:none;">
+          <button class="dl-btn" onclick="mockDownload('json')">📄 JSON</button>
+          <button class="dl-btn" onclick="mockDownload('ply')">☁️ PLY</button>
+          <button class="dl-btn primary" onclick="mockDownload('glb')">⬇ GLB 다운로드</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- GENERATE -->
+  <div class="generate-wrap">
+    <button class="btn-generate" id="btnGenerate" disabled>
+      <span>GENERATE</span>
+    </button>
+    <div class="gen-hint">P³-SAM · <b>3.7M</b> 모델 학습 기반 자동 파트 분리</div>
+  </div>
+</main>
+
+<script>
+  const dropZone = document.getElementById('dropZone');
+  const fileInput = document.getElementById('fileInput');
+  const dropPreview = document.getElementById('dropPreview');
+  const dropIcon = document.getElementById('dropIcon');
+  const dropLabel = document.getElementById('dropLabel');
+  const dropSub = document.getElementById('dropSub');
+  const fileInfo = document.getElementById('fileInfo');
+  const fileName = document.getElementById('fileName');
+  const fileSize = document.getElementById('fileSize');
+  const fileRemove = document.getElementById('fileRemove');
+  const btnGenerate = document.getElementById('btnGenerate');
+
+  const resultEmpty = document.getElementById('resultEmpty');
+  const resultProcessing = document.getElementById('resultProcessing');
+  const resultDone = document.getElementById('resultDone');
+  const downloadRow = document.getElementById('downloadRow');
+  const segCount = document.getElementById('segCount');
+  const segTags = document.getElementById('segTags');
+
+  let currentFile = null;
+
+  // Drag and drop
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('dragover');
+    const f = e.dataTransfer.files[0];
+    if (f) handleFile(f);
+  });
+  fileInput.addEventListener('change', e => {
+    if (e.target.files[0]) handleFile(e.target.files[0]);
+  });
+  fileRemove.addEventListener('click', e => {
+    e.stopPropagation();
+    clearFile();
+  });
+
+  function handleFile(f) {
+    currentFile = f;
+    dropZone.classList.add('has-file');
+    dropIcon.style.display = 'none';
+    dropLabel.style.display = 'none';
+    dropSub.style.display = 'none';
+
+    // Show icon based on type
+    const ext = f.name.split('.').pop().toLowerCase();
+    dropPreview.style.display = 'none';
+
+    // Show emoji preview
+    const iconMap = { glb: '📦', obj: '🔷', ply: '☁️' };
+    const tempIcon = document.createElement('div');
+    tempIcon.style.cssText = 'font-size:4rem; animation: float 3s ease-in-out infinite;';
+    tempIcon.textContent = iconMap[ext] || '📦';
+    const existing = dropZone.querySelector('.file-icon-large');
+    if (existing) existing.remove();
+    tempIcon.className = 'file-icon-large';
+    dropZone.appendChild(tempIcon);
+
+    fileName.textContent = f.name;
+    fileSize.textContent = formatSize(f.size);
+    fileInfo.classList.add('visible');
+    btnGenerate.disabled = false;
+  }
+
+  function clearFile() {
+    currentFile = null;
+    dropZone.classList.remove('has-file');
+    dropIcon.style.display = 'flex';
+    dropLabel.style.display = 'block';
+    dropSub.style.display = 'block';
+    fileInfo.classList.remove('visible');
+    fileInput.value = '';
+    btnGenerate.disabled = true;
+    const existing = dropZone.querySelector('.file-icon-large');
+    if (existing) existing.remove();
+    resetResult();
+  }
+
+  function resetResult() {
+    resultEmpty.classList.remove('hidden');
+    resultProcessing.classList.remove('visible');
+    resultDone.classList.remove('visible');
+    downloadRow.style.display = 'none';
+    segCount.textContent = '—';
+  }
+
+  function formatSize(b) {
+    if (b < 1024) return b + ' B';
+    if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' KB';
+    return (b / 1024 / 1024).toFixed(1) + ' MB';
+  }
+
+  // Generate
+  btnGenerate.addEventListener('click', () => {
+    if (!currentFile) return;
+    btnGenerate.disabled = true;
+    resultEmpty.classList.add('hidden');
+    resultProcessing.classList.add('visible');
+    resultDone.classList.remove('visible');
+    downloadRow.style.display = 'none';
+
+    const steps = ['step1','step2','step3','step4'];
+    const delays = [0, 900, 1900, 2900];
+
+    steps.forEach((id, i) => {
+      document.getElementById(id).className = 'proc-step';
+    });
+    steps.forEach((id, i) => {
+      setTimeout(() => {
+        if (i > 0) document.getElementById(steps[i-1]).className = 'proc-step done';
+        document.getElementById(id).className = 'proc-step active';
+      }, delays[i]);
+    });
+
+    setTimeout(() => {
+      document.getElementById(steps[steps.length-1]).className = 'proc-step done';
+      showResult();
+    }, 3800);
+  });
+
+  function showResult() {
+    resultProcessing.classList.remove('visible');
+    resultDone.classList.add('visible');
+    downloadRow.style.display = 'flex';
+
+    const parts = [
+      { name: 'body', color: '#7b61ff' },
+      { name: 'basin', color: '#c8f542' },
+      { name: 'faucet', color: '#ff6b6b' },
+      { name: 'drain', color: '#ffd166' },
+      { name: 'pipe', color: '#06d6a0' },
+      { name: 'pedestal', color: '#a8dadc' },
+    ];
+    const count = Math.floor(Math.random() * 3) + 4;
+    const selected = parts.slice(0, count);
+
+    segTags.innerHTML = '';
+    selected.forEach(p => {
+      const tag = document.createElement('div');
+      tag.className = 'seg-tag';
+      tag.innerHTML = `<div class="seg-tag-dot" style="background:${p.color}"></div>${p.name}`;
+      segTags.appendChild(tag);
+    });
+
+    segCount.textContent = `${count} parts`;
+    btnGenerate.disabled = false;
+  }
+
+  function mockDownload(fmt) {
+    const blob = new Blob([`// 스키프. — P3-SAM segmentation output (.${fmt})`], { type: 'text/plain' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `skiff_output.${fmt}`;
+    a.click();
+  }
+</script>
+</body>
+</html>
